@@ -1,16 +1,30 @@
 import bpy
 
+from .geometry import dump_geometry_node, load_geometry_node
 from .register_class import _get_cls, operator
 
 
 class CGT_OT_geometry_copy(bpy.types.Operator):
-    """2つのオブジェクトの異なる点を選択"""
+    """Copy nodes"""
 
     bl_idname = "object.geometry_copy"
     bl_label = "Copy"
     bl_description = "Serialize geometry nodes."
 
     def execute(self, context):
+        bpy.context.window_manager.clipboard = dump_geometry_node()
+        return {"FINISHED"}
+
+
+class CGT_OT_geometry_paste(bpy.types.Operator):
+    """Paste nodes"""
+
+    bl_idname = "object.geometry_paste"
+    bl_label = "Paste"
+    bl_description = "Deserialize geometry nodes."
+
+    def execute(self, context):
+        load_geometry_node(str(bpy.context.window_manager.clipboard))
         return {"FINISHED"}
 
 
@@ -19,10 +33,10 @@ class CGT_PT_bit(bpy.types.Panel):
     bl_space_type = "NODE_EDITOR"
     bl_region_type = "UI"
     bl_category = "Edit"
-    bl_options = {"HEADER_LAYOUT_EXPAND"}
 
     def draw(self, context):
-        prop = operator(self.layout, CGT_OT_geometry_copy)
+        operator(self.layout, CGT_OT_geometry_copy)
+        operator(self.layout, CGT_OT_geometry_paste)
 
 
 # __init__.pyで使用
