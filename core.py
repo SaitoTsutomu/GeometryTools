@@ -12,7 +12,15 @@ class CGT_OT_geometry_copy(bpy.types.Operator):
     bl_description = "Serialize geometry nodes."
 
     def execute(self, context):
+        if not (obj := bpy.context.object):
+            self.report({"WARNING"}, "Select object.")
+            return {"CANCELLED"}
+        modifiers = next(iter([m for m in obj.modifiers if m.type == "NODES"]), None)
+        if not modifiers or not modifiers.node_group:
+            self.report({"WARNING"}, "Add geometry node.")
+            return {"CANCELLED"}
         bpy.context.window_manager.clipboard = dump_geometry_node()
+        self.report({"INFO"}, "Copied to clipboard.")
         return {"FINISHED"}
 
 
@@ -24,6 +32,14 @@ class CGT_OT_geometry_paste(bpy.types.Operator):
     bl_description = "Deserialize geometry nodes."
 
     def execute(self, context):
+        if not (obj := bpy.context.object):
+            self.report({"WARNING"}, "Select object.")
+            return {"CANCELLED"}
+        modifiers = next(iter([m for m in obj.modifiers if m.type == "NODES"]), None)
+        if not modifiers:
+            modifiers = bpy.context.object.modifiers.new("GeometryNodes", "NODES")
+        if not modifiers.node_group:
+            modifiers.node_group = bpy.data.node_groups.new("Geometry Nodes", "GeometryNodeTree")
         load_geometry_node(str(bpy.context.window_manager.clipboard))
         return {"FINISHED"}
 
