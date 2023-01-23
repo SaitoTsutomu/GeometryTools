@@ -18,3 +18,5 @@ Serialize/Deserialize geometry nodes.
 - Show the sidebar and select the Edit tab.
 - Push "Copy".
 - Push "Paste" at another objects.
+
+https://qiita.com/SaitoTsutomu/items/7213552baf9b65de3df6
