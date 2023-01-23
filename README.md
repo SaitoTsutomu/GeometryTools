@@ -1,19 +1,20 @@
-## Blender Add-on: DiffObj
+## Blender Add-on: GeometryTools
 
-Select the different vertices of 2 objects.
+Serialize/Deserialize geometry nodes.
 
 ## Installation
 
-- Download https://github.com/SaitoTsutomu/DiffObj/archive/refs/heads/master.zip
+- Download https://github.com/SaitoTsutomu/GeometryTools/archive/refs/heads/master.zip
 - Start Blender.
 - Edit menu -> Preferences
   - Select the "Add-ons" tab.
   - Press the "Install ...".
   - Select the downloaded ZIP file and press the button "Install Add-on".
-  - Check the "Object: DiffObj".
+  - Check the "Object: GeometryTools".
 
 ## Usage
 
-- Select two objects.
+- Open geometry node editor.
 - Show the sidebar and select the Edit tab.
-- Push "Select Diff 2 Obj".
+- Push "Copy".
+- Push "Paste" at another objects.
