@@ -18,13 +18,13 @@ TODO
 def dump_attr(nd: bpy.types.Node, name: str, dtype=None) -> str:
     value = getattr(nd, name)
     if isinstance(value, (mathutils.Vector, mathutils.Color)):
-        value = [round(i, 3) for i in value]
+        value = [round(i, 4) for i in value]
     if dtype and isinstance(value, list):
         value = [dtype(i) for i in value]
     elif dtype:
         value = dtype(value)
         if isinstance(value, float):
-            value = round(value, 6)
+            value = round(value, 4)
     return f"  {name}: {value}"
 
 

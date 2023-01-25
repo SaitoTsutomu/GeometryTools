@@ -64,7 +64,10 @@ def ops_func(func, area_type, region_type="WINDOW"):
                     ctx = bpy.context.copy()
                     ctx["area"] = area
                     ctx["region"] = region
-                    func(ctx)
+                    try:
+                        func(ctx)
+                    except RuntimeError:
+                        pass
                     return
 
 
