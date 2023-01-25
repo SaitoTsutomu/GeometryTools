@@ -9,6 +9,7 @@ import yaml
 TODO
 - Join Geometryの入力の順番が取得不可
 - inputsの非表示が不明
+- Selectionのリンク接続が反映されない
 - ShaderNodeFloatCurveの再描画
 - Undoなどで不安定
 """
@@ -16,10 +17,14 @@ TODO
 
 def dump_attr(nd: bpy.types.Node, name: str, dtype=None) -> str:
     value = getattr(nd, name)
-    if dtype:
+    if isinstance(value, (mathutils.Vector, mathutils.Color)):
+        value = [round(i, 3) for i in value]
+    if dtype and isinstance(value, list):
+        value = [dtype(i) for i in value]
+    elif dtype:
         value = dtype(value)
-    elif isinstance(value, mathutils.Vector):
-        value = list(value.to_tuple(3))
+        if isinstance(value, float):
+            value = round(value, 6)
     return f"  {name}: {value}"
 
 
@@ -71,9 +76,25 @@ def minimum_class_name(nd: bpy.types.Node) -> str:
 
 
 def sort_node(nd):
-    if nd.type == "GROUP_OUTPUT":
+    if nd.type == "GROUP_INPUT":
+        return -99999
+    elif nd.type == "GROUP_OUTPUT":
         return 99999
     return nd.location.x - nd.location.y / 4
+
+
+def is_struct(val):
+    return val.__class__.__name__ == "bpy_prop_array" or isinstance(val, bpy.types.bpy_struct)
+
+
+def inputs_links(sc):
+    lst = []
+    for link in sc.links:
+        if len(link.from_node.outputs) == 1:
+            lst.append(f"{link.from_node.name}")
+        else:
+            lst.append(f"{link.from_node.name}/{link.from_socket.name}")
+    return lst
 
 
 def dump_geometry_node(obj: bpy.types.Object = None) -> str:
@@ -92,7 +113,11 @@ def dump_geometry_node(obj: bpy.types.Object = None) -> str:
         if data:
             result.append(f"{key}:")
             for sc in data:
-                result.append(f"  {sc.name}: {sc.bl_socket_idname}")
+                typ = sc.bl_socket_idname
+                info = f"  {sc.name}: {typ}"
+                if typ == "NodeSocketFloatFactor":
+                    info += f", {sc.default_value}, {sc.min_value}, {sc.max_value}"
+                result.append(info)
     nodes = sorted(node_group.nodes, key=sort_node)
     for nd in nodes:
         # 未使用の出力は無視する
@@ -103,32 +128,37 @@ def dump_geometry_node(obj: bpy.types.Object = None) -> str:
             result.append(f"  bl_idname: {bl_idname}")
         if nd.label:
             result.append(dump_attr(nd, "label"))
-        result.append(dump_attr(nd, "location"))
+        result.append(dump_attr(nd, "location", int))
         result.append(dump_attr(nd, "width", int))
         if nd.hide:
             result.append(dump_attr(nd, "hide"))
+        if nd.use_custom_color:
+            result.append(dump_attr(nd, "color"))
         n = len(nd.bl_rna.base.properties)
         for pr in nd.bl_rna.properties[n:]:
             name = pr.identifier
             value = getattr(nd, name)
             if name == "mapping":
                 result.append(dump_mapping(value))
+            elif is_struct(value):
+                continue
             elif not isinstance(value, bpy.types.PropertyGroup) and name != "is_active_output":
                 result.append(f"  {name}: {value}")
         inputs = []
         for i, sc in enumerate(nd.inputs):
-            name = i if sc.name in {"Vector"} else sc.name
-            lst = [f"{link.from_node.name}/{link.from_socket.name}" for link in sc.links]
-            if lst:
+            name = i if sc.name in {"Vector", "Value"} else sc.name
+            if lst := inputs_links(sc):
                 inputs.append((name, "~" + ";".join(lst)))
             elif hasattr(sc, "default_value"):
                 dval = sc.default_value
-                if dval.__class__.__name__ == "bpy_prop_array" or isinstance(
-                    dval, bpy.types.bpy_struct
-                ):
+                if isinstance(dval, (bpy.types.Object, bpy.types.Material)):
+                    dval = f"{dval.name}"
+                if is_struct(dval):
                     continue
-                if isinstance(dval, mathutils.Vector):
+                elif isinstance(dval, mathutils.Vector):
                     dval = list(dval)
+                elif isinstance(dval, float):
+                    dval = round(dval, 6)
                 inputs.append((i, dval))
         if inputs:
             result.append("  inputs:")
@@ -155,7 +185,14 @@ def load_geometry_node(yml: Union[dict[str, Any], str], obj: bpy.types.Object = 
     for key, data in zip(["Inputs", "Outputs"], [node_group.inputs, node_group.outputs]):
         if dc := yml.pop(key, None):
             for name, typ in dc.items():
-                data.new(typ, name)
+                if typ.startswith("NodeSocketFloatFactor"):
+                    typ, dval, mnvl, mxvl = typ.split(",")
+                    sct = data.new(typ, name)
+                    sct.default_value = float(dval)
+                    sct.min_value = float(mnvl)
+                    sct.max_value = float(mxvl)
+                else:
+                    data.new(typ, name)
     nds = {}
     for key, info in yml.items():
         if not (typ := info.get("bl_idname")):
@@ -169,17 +206,31 @@ def load_geometry_node(yml: Union[dict[str, Any], str], obj: bpy.types.Object = 
                 load_mapping(nd.mapping, value)
             elif name == "inputs":
                 for sc, dval in value.items():
+                    sct = nd.inputs[sc]
                     if isinstance(dval, str) and dval.startswith("~"):
                         lst = dval[1:].split(";")
                         for pr in lst:
                             frnd, *rem = pr.split("/")
                             # 省略時は0とする
                             frsc = rem[0] if rem else 0
-                            node_group.links.new(nds[frnd].outputs[frsc], nd.inputs[sc])
+                            try:
+                                node_group.links.new(nds[frnd].outputs[frsc], sct)
+                            except KeyError as e:
+                                print(f"\033[31mKeyError {nd.name} {name} {e}\033[0m")
+                    elif sct.bl_idname == "NodeSocketObject":
+                        target = bpy.data.objects.get(dval)
+                        if target:
+                            sct.default_value = target
+                    elif sct.bl_idname == "NodeSocketMaterial":
+                        target = bpy.data.materials.get(dval)
+                        if target:
+                            sct.default_value = target
                     else:
-                        nd.inputs[sc].default_value = dval
+                        sct.default_value = dval
             else:
                 load_attr(nd, name, value)
+                if name == "color":
+                    nd.use_custom_color = True
 
 
 # https://qiita.com/SaitoTsutomu/items/1bf451085f55bde21224

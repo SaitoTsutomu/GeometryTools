@@ -41,6 +41,7 @@ class CGT_OT_geometry_paste(bpy.types.Operator):
         if not modifiers.node_group:
             modifiers.node_group = bpy.data.node_groups.new("Geometry Nodes", "GeometryNodeTree")
         load_geometry_node(str(bpy.context.window_manager.clipboard))
+        ops_func(bpy.ops.node.view_all, "NODE_EDITOR")
         return {"FINISHED"}
 
 
@@ -53,6 +54,18 @@ class CGT_PT_bit(bpy.types.Panel):
     def draw(self, context):
         operator(self.layout, CGT_OT_geometry_copy)
         operator(self.layout, CGT_OT_geometry_paste)
+
+
+def ops_func(func, area_type, region_type="WINDOW"):
+    for area in bpy.context.screen.areas:
+        if area.type == area_type:
+            for region in area.regions:
+                if region.type == region_type:
+                    ctx = bpy.context.copy()
+                    ctx["area"] = area
+                    ctx["region"] = region
+                    func(ctx)
+                    return
 
 
 # __init__.pyで使用
