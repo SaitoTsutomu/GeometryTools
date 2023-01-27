@@ -38,9 +38,10 @@ ui_classes: list[type] = []
 def register():
     global ui_classes
     try:
-        from . import core
+        from . import core, geometry
 
         importlib.reload(core)
+        importlib.reload(geometry)
         ui_classes[:] = core.ui_classes
     except (ModuleNotFoundError, AttributeError):
         ui_classes[:] = []

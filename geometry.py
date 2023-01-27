@@ -17,7 +17,7 @@ TODO
 
 def dump_attr(nd: bpy.types.Node, name: str, dtype=None) -> str:
     value = getattr(nd, name)
-    if isinstance(value, (mathutils.Vector, mathutils.Color)):
+    if isinstance(value, (mathutils.Vector, mathutils.Euler, mathutils.Color)):
         value = [round(i, 4) for i in value]
     if dtype and isinstance(value, list):
         value = [dtype(i) for i in value]
@@ -25,7 +25,7 @@ def dump_attr(nd: bpy.types.Node, name: str, dtype=None) -> str:
         value = dtype(value)
         if isinstance(value, float):
             value = round(value, 4)
-    return f"  {name}: {value}"
+    return f"    {name}: {value}"
 
 
 def load_attr(nd: bpy.types.Node, name: str, value: object) -> None:
@@ -33,10 +33,10 @@ def load_attr(nd: bpy.types.Node, name: str, value: object) -> None:
 
 
 def dump_mapping(mapping: bpy.types.CurveMapping) -> str:
-    res = ["  mapping:"]
+    res = ["    mapping:"]
     for pnt in mapping.curves[0].points:
         x, y = map(partial(round, ndigits=2), pnt.location)
-        res.append(f"  - {pnt.handle_type}, {x}, {y}")
+        res.append(f"    - {pnt.handle_type}, {x}, {y}")
     return "\n".join(res)
 
 
@@ -93,7 +93,10 @@ def inputs_links(sc):
         if len(link.from_node.outputs) == 1:
             lst.append(f"{link.from_node.name}")
         else:
-            lst.append(f"{link.from_node.name}/{link.from_socket.name}")
+            for i, sct in enumerate(link.from_node.outputs):
+                if sct.identifier == link.from_socket.identifier:
+                    break
+            lst.append(f"{link.from_node.name}/{i}")
     return lst
 
 
@@ -107,63 +110,77 @@ def dump_geometry_node(obj: bpy.types.Object = None) -> str:
     modifiers = next(iter([m for m in obj.modifiers if m.type == "NODES"]), None)
     if not modifiers or not modifiers.node_group:
         return ""
-    node_group = modifiers.node_group
+    node_groups, remain = [], [modifiers.node_group]
+    while remain:
+        node_group = remain.pop()
+        node_groups.append(node_group)
+        for nd in node_group.nodes:
+            if nd.bl_idname == "GeometryNodeGroup":
+                ng = nd.node_tree
+                if ng not in node_groups:
+                    remain.append(ng)
     result = []
-    for key, data in zip(["Inputs", "Outputs"], [node_group.inputs, node_group.outputs]):
-        if data:
-            result.append(f"{key}:")
-            for sc in data:
-                typ = sc.bl_socket_idname
-                info = f"  {sc.name}: {typ}"
-                if typ == "NodeSocketFloatFactor":
-                    info += f", {sc.default_value}, {sc.min_value}, {sc.max_value}"
-                result.append(info)
-    nodes = sorted(node_group.nodes, key=sort_node)
-    for nd in nodes:
-        # 未使用の出力は無視する
-        if getattr(nd, "is_active_output", None) is False:
-            continue
-        result.append(f"{nd.name}:")
-        if bl_idname := minimum_class_name(nd):
-            result.append(f"  bl_idname: {bl_idname}")
-        if nd.label:
-            result.append(dump_attr(nd, "label"))
-        result.append(dump_attr(nd, "location", int))
-        result.append(dump_attr(nd, "width", int))
-        if nd.hide:
-            result.append(dump_attr(nd, "hide"))
-        if nd.use_custom_color:
-            result.append(dump_attr(nd, "color"))
-        n = len(nd.bl_rna.base.properties)
-        for pr in nd.bl_rna.properties[n:]:
-            name = pr.identifier
-            value = getattr(nd, name)
-            if name == "mapping":
-                result.append(dump_mapping(value))
-            elif is_struct(value):
+    for node_group in reversed(node_groups):
+        result.append(f"{node_group.name}:")
+        for key, data in zip(["Inputs", "Outputs"], [node_group.inputs, node_group.outputs]):
+            if data:
+                result.append(f"  {key}:")
+                for sc in data:
+                    typ = sc.bl_socket_idname
+                    info = f"    {sc.identifier}: {sc.name}/{typ}"
+                    if typ == "NodeSocketFloatFactor":
+                        info += f", {sc.default_value}, {sc.min_value}, {sc.max_value}"
+                    result.append(info)
+        nodes = sorted(node_group.nodes, key=sort_node)
+        for nd in nodes:
+            # 未使用の出力は無視する
+            if getattr(nd, "is_active_output", None) is False:
                 continue
-            elif not isinstance(value, bpy.types.PropertyGroup) and name != "is_active_output":
-                result.append(f"  {name}: {value}")
-        inputs = []
-        for i, sc in enumerate(nd.inputs):
-            name = i if sc.name in {"Vector", "Value"} else sc.name
-            if lst := inputs_links(sc):
-                inputs.append((name, "~" + ";".join(lst)))
-            elif hasattr(sc, "default_value"):
-                dval = sc.default_value
-                if isinstance(dval, (bpy.types.Object, bpy.types.Material)):
-                    dval = f"{dval.name}"
-                if is_struct(dval):
+            result.append(f"  {nd.name}:")
+            if bl_idname := minimum_class_name(nd):
+                result.append(f"    bl_idname: {bl_idname}")
+            if nd.label:
+                result.append(dump_attr(nd, "label"))
+            if nd.bl_idname == "GeometryNodeGroup":
+                result.append(f"    node_tree: {nd.node_tree.name}")
+            result.append(dump_attr(nd, "location", int))
+            result.append(dump_attr(nd, "width", int))
+            if nd.hide:
+                result.append(dump_attr(nd, "hide"))
+            if nd.use_custom_color:
+                result.append(dump_attr(nd, "color"))
+            n = len(nd.bl_rna.base.properties)
+            for pr in nd.bl_rna.properties[n:]:
+                name = pr.identifier
+                value = getattr(nd, name)
+                if name == "mapping":
+                    result.append(dump_mapping(value))
+                elif is_struct(value):
                     continue
-                elif isinstance(dval, mathutils.Vector):
-                    dval = list(dval)
-                elif isinstance(dval, float):
-                    dval = round(dval, 6)
-                inputs.append((i, dval))
-        if inputs:
-            result.append("  inputs:")
-            for name, dval in inputs:
-                result.append(f"    {name}: {dval}")
+                elif not isinstance(value, bpy.types.PropertyGroup) and name != "is_active_output":
+                    result.append(f"    {name}: {value}")
+            inputs = []
+            for i, sc in enumerate(nd.inputs):
+                name = sc.name
+                if sc.name in {"Vector", "Value"} or nd.bl_idname == "GeometryNodeGroup":
+                    name = i
+                if lst := inputs_links(sc):
+                    inputs.append((name, "~" + ";".join(lst)))
+                elif hasattr(sc, "default_value"):
+                    dval = sc.default_value
+                    if isinstance(dval, (bpy.types.Object, bpy.types.Material)):
+                        dval = f"{dval.name}"
+                    if is_struct(dval):
+                        continue
+                    elif isinstance(dval, (mathutils.Vector, mathutils.Euler)):
+                        dval = list(dval)
+                    elif isinstance(dval, float):
+                        dval = round(dval, 6)
+                    inputs.append((i, dval))
+            if inputs:
+                result.append("    inputs:")
+                for name, dval in inputs:
+                    result.append(f"      {name}: {dval}")
     return "\n".join(result)
 
 
@@ -173,64 +190,79 @@ def load_geometry_node(yml: Union[dict[str, Any], str], obj: bpy.types.Object = 
     :param yml: YAML
     :param obj: オブジェクト
     """
-    yml = yaml.safe_load(yml) if isinstance(yml, str) else yml.copy()
-    obj = obj or bpy.context.object
-    modifiers = next(iter([m for m in obj.modifiers if m.type == "NODES"]), None)
-    if not modifiers or not modifiers.node_group:
-        return None
-    node_group = modifiers.node_group
-    node_group.inputs.clear()
-    node_group.outputs.clear()
-    node_group.nodes.clear()
-    for key, data in zip(["Inputs", "Outputs"], [node_group.inputs, node_group.outputs]):
-        if dc := yml.pop(key, None):
-            for name, typ in dc.items():
-                if typ.startswith("NodeSocketFloatFactor"):
-                    typ, dval, mnvl, mxvl = typ.split(",")
-                    sct = data.new(typ, name)
-                    sct.default_value = float(dval)
-                    sct.min_value = float(mnvl)
-                    sct.max_value = float(mxvl)
-                else:
-                    data.new(typ, name)
-    nds = {}
-    for key, info in yml.items():
-        if not (typ := info.get("bl_idname")):
-            typ = class_name(key)
-        nds[key] = nd = node_group.nodes.new(typ)
-        nd.select = False
-    for key, info in yml.items():
-        nd = nds[key]
-        for name, value in info.items():
-            if name == "mapping":
-                load_mapping(nd.mapping, value)
-            elif name == "inputs":
-                for sc, dval in value.items():
-                    sct = nd.inputs[sc]
-                    if isinstance(dval, str) and dval.startswith("~"):
-                        lst = dval[1:].split(";")
-                        for pr in lst:
-                            frnd, *rem = pr.split("/")
-                            # 省略時は0とする
-                            frsc = rem[0] if rem else 0
-                            try:
-                                node_group.links.new(nds[frnd].outputs[frsc], sct)
-                            except KeyError as e:
-                                print(f"\033[31mKeyError {nd.name} {name} {e}\033[0m")
-                    elif sct.bl_idname == "NodeSocketObject":
-                        target = bpy.data.objects.get(dval)
-                        if target:
-                            sct.default_value = target
-                    elif sct.bl_idname == "NodeSocketMaterial":
-                        target = bpy.data.materials.get(dval)
-                        if target:
-                            sct.default_value = target
+    yml = yaml.safe_load(yml) if isinstance(yml, str) else yml
+    node_group_name = list(yml)[-1] if yml else ""
+    for ngkey, ngval in yml.items():
+        ngval = ngval.copy()
+        node_group = bpy.data.node_groups.get(ngkey)
+        if not node_group:
+            node_group = bpy.data.node_groups.new("Geometry Nodes", "GeometryNodeTree")
+            node_group.name = ngkey
+        node_group.inputs.clear()
+        node_group.outputs.clear()
+        node_group.nodes.clear()
+        for key, data in zip(["Inputs", "Outputs"], [node_group.inputs, node_group.outputs]):
+            if dc := ngval.pop(key, None):
+                for idntf, ioval in dc.items():
+                    name, typ = ioval.split("/")
+                    if typ.startswith("NodeSocketFloatFactor"):
+                        typ, dval, mnvl, mxvl = typ.split(",")
+                        sct = data.new(typ, name)
+                        sct.default_value = float(dval)
+                        sct.min_value = float(mnvl)
+                        sct.max_value = float(mxvl)
                     else:
-                        sct.default_value = dval
-            else:
-                load_attr(nd, name, value)
-                if name == "color":
-                    nd.use_custom_color = True
+                        sct = data.new(typ, name)
+                    # sct.identifier = idntf  # read-onlyで設定不可
+        nds = {}
+        for key, info in ngval.items():
+            if not (typ := info.get("bl_idname")):
+                typ = class_name(key)
+            nds[key] = nd = node_group.nodes.new(typ)
+            nd.select = False
+        for key, info in ngval.items():
+            nd = nds[key]
+            for name, value in info.items():
+                if name == "mapping":
+                    load_mapping(nd.mapping, value)
+                elif name == "node_tree":
+                    nd.node_tree = bpy.data.node_groups.get(value)
+                elif name == "inputs":
+                    for sc, dval in value.items():
+                        sct = nd.inputs[sc]
+                        if isinstance(dval, str) and dval.startswith("~"):
+                            lst = dval[1:].split(";")
+                            for pr in lst:
+                                frnd, *rem = pr.split("/")
+                                # 省略時は0とする
+                                frsc = int(rem[0]) if rem else 0
+                                try:
+                                    node_group.links.new(nds[frnd].outputs[frsc], sct)
+                                except (KeyError, IndexError) as e:
+                                    print(f"\033[31mKeyError {nd.name} {name} {e}\033[0m")
+                        elif sct.bl_idname == "NodeSocketObject":
+                            target = bpy.data.objects.get(dval)
+                            if target:
+                                sct.default_value = target
+                        elif sct.bl_idname == "NodeSocketMaterial":
+                            target = bpy.data.materials.get(dval)
+                            if target:
+                                sct.default_value = target
+                        else:
+                            sct.default_value = dval
+                else:
+                    load_attr(nd, name, value)
+                    if name == "color":
+                        nd.use_custom_color = True
+    obj = obj or bpy.context.object
+    if obj:
+        print(obj)
+        modifier = next(iter([m for m in obj.modifiers if m.type == "NODES"]), None)
+        if not modifier:
+            modifier = obj.modifiers.new("GeometryNodes", "NODES")
+        node_group = bpy.data.node_groups.get(node_group_name)
+        if node_group:
+            modifier.node_group = node_group
 
 
 # https://qiita.com/SaitoTsutomu/items/1bf451085f55bde21224
