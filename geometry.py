@@ -100,10 +100,11 @@ def inputs_links(sc):
     return lst
 
 
-def dump_geometry_node(obj: bpy.types.Object = None) -> str:
+def dump_geometry_node(obj: bpy.types.Object = None, simple: bool = False) -> str:
     """ジオメトリーノードのYAMLを返す
 
     :param obj: オブジェクト
+    :param simple: widthとlabelを出さないか
     :return: YAML
     """
     obj = obj or bpy.context.object
@@ -139,12 +140,13 @@ def dump_geometry_node(obj: bpy.types.Object = None) -> str:
             result.append(f"  {nd.name}:")
             if bl_idname := minimum_class_name(nd):
                 result.append(f"    bl_idname: {bl_idname}")
-            if nd.label:
+            if nd.label and not simple:
                 result.append(dump_attr(nd, "label"))
             if nd.bl_idname == "GeometryNodeGroup":
                 result.append(f"    node_tree: {nd.node_tree.name}")
             result.append(dump_attr(nd, "location", int))
-            result.append(dump_attr(nd, "width", int))
+            if not simple:
+                result.append(dump_attr(nd, "width", int))
             if nd.hide:
                 result.append(dump_attr(nd, "hide"))
             if nd.use_custom_color:
