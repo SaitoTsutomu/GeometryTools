@@ -12,6 +12,7 @@ class CGT_OT_geometry_copy(bpy.types.Operator):
     bl_description = "Serialize geometry nodes."
 
     simple: bpy.props.BoolProperty() = bpy.props.BoolProperty()  # type: ignore
+    idname: bpy.props.BoolProperty() = bpy.props.BoolProperty()  # type: ignore
 
     def execute(self, context):
         if not (obj := bpy.context.object):
@@ -21,7 +22,9 @@ class CGT_OT_geometry_copy(bpy.types.Operator):
         if not modifiers or not modifiers.node_group:
             self.report({"WARNING"}, "Add geometry node.")
             return {"CANCELLED"}
-        bpy.context.window_manager.clipboard = dump_geometry_node(simple=self.simple)
+        bpy.context.window_manager.clipboard = dump_geometry_node(
+            simple=self.simple, idname=self.idname
+        )
         self.report({"INFO"}, "Copied to clipboard.")
         return {"FINISHED"}
 
@@ -55,8 +58,10 @@ class CGT_PT_bit(bpy.types.Panel):
 
     def draw(self, context):
         self.layout.prop(context.scene, "simple", text="Simple")
+        self.layout.prop(context.scene, "idname", text="Has bl_idname")
         prop = operator(self.layout, CGT_OT_geometry_copy)
         prop.simple = context.scene.simple
+        prop.idname = context.scene.idname
         operator(self.layout, CGT_OT_geometry_paste)
 
 

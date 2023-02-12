@@ -100,11 +100,14 @@ def inputs_links(sc):
     return lst
 
 
-def dump_geometry_node(obj: bpy.types.Object = None, simple: bool = False) -> str:
+def dump_geometry_node(
+    obj: bpy.types.Object = None, simple: bool = False, idname: bool = False
+) -> str:
     """ジオメトリーノードのYAMLを返す
 
     :param obj: オブジェクト
     :param simple: widthとlabelを出さないか
+    :param idname: bl_idnameを出さないか
     :return: YAML
     """
     obj = obj or bpy.context.object
@@ -138,7 +141,8 @@ def dump_geometry_node(obj: bpy.types.Object = None, simple: bool = False) -> st
             if getattr(nd, "is_active_output", None) is False:
                 continue
             result.append(f"  {nd.name}:")
-            if bl_idname := minimum_class_name(nd):
+            bl_idname = nd.bl_idname if idname else minimum_class_name(nd)
+            if bl_idname:
                 result.append(f"    bl_idname: {bl_idname}")
             if nd.label and not simple:
                 result.append(dump_attr(nd, "label"))
