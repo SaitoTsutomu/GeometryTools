@@ -1,9 +1,14 @@
 from functools import partial
+from pathlib import Path
 from typing import Any, Union
 
 import bpy
 import mathutils
-import yaml
+
+try:
+    import yaml
+except ModuleNotFoundError as e:
+    print(f"\033[31m{Path(__file__).parent.name}: {e}\033[0m")
 
 """
 TODO
